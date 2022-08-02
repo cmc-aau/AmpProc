@@ -60,11 +60,11 @@ MAXTHREADS=$((`nproc`-2))
 SCRIPTPATH="/space/sharedbin_ubuntu_14_04/Non_module_software/AmpProc-v$VERSIONNUMBER"
 
 # Define the location of the sequences folders
-SEQPATH="/space/sequences/"
-#SEQPATH="/space/sequences/Illumina"
+SEQPATH="/raw_data/sequences/"
+#SEQPATH="/raw_data/sequences/Illumina"
 
 # Make /tmp/$USER directory as needed
-mkdir -p /tmp/$USER
+mkdir -p "/tmp/$USER"
 
 # Define script start date-time
 STARTTIME=$(date '+%Y%m%d-%H%M%S')
@@ -504,7 +504,7 @@ echoWithDate "Retrieving sequenced files and removing PhiX contamination."
 # Find the samples from the samples file
 # copy sample sequence files to current directory,
 # Filter PhiX
-# Path to sequences folders: $SEQPATH = /space/sequences/
+# Path to sequences folders: $SEQPATH = /raw_data/sequences/
 
   # Remove empty-samples.txt if present
   if [ -e "empty-samples.txt" ]
@@ -554,7 +554,7 @@ echoWithDate "Retrieving sequenced files and removing PhiX contamination."
 # Find the samples from the samples file
 # copy sample sequence files to current directory,
 # Filter PhiX
-# Path to sequences folders: $SEQPATH = /space/sequences/
+# Path to sequences folders: $SEQPATH = /raw_data/sequences/
 
 # $1 = R1 or R2
 
