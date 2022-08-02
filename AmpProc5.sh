@@ -1,7 +1,7 @@
 #!/bin/bash
 
-VERSIONNUMBER=5.1.0.beta2.13
-MODIFIEDDATE="22 November 2021"
+VERSIONNUMBER=5.1.1
+MODIFIEDDATE="2 Aug 2022"
 
 ###################################################################################################
 #
