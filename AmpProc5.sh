@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSIONNUMBER=5.1.1
+VERSIONNUMBER=5.1.2
 MODIFIEDDATE="2 Aug 2022"
 
 ###################################################################################################
@@ -517,8 +517,8 @@ echoWithDate "Retrieving sequenced files and removing PhiX contamination."
       # Retrieve sequenced reads
       SAMPLEDELIM="_";
       NAME=$SAMPLES;
-      find $SEQPATH -name $NAME$SAMPLEDELIM*R1* 2>/dev/null -exec gzip -cd {} \; > rawdata/$NAME.R1.fq
-      find $SEQPATH -name $NAME$SAMPLEDELIM*R2* 2>/dev/null -exec gzip -cd {} \; > rawdata/$NAME.R2.fq
+      find $SEQPATH -name $NAME$SAMPLEDELIM*R1* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$NAME.R1.fq || true
+      find $SEQPATH -name $NAME$SAMPLEDELIM*R2* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$NAME.R2.fq || true
       # Do only if fasta file is non-empty
       if [ -s "rawdata/$NAME.R1.fq" ]
         then
@@ -564,7 +564,7 @@ echoWithDate "Retrieving sequenced files and removing PhiX contamination."
       SAMPLEDELIM="_";
       NAME=$SAMPLES;
 
-      find $SEQPATH -name $NAME$SAMPLEDELIM*$1* 2>/dev/null -exec gzip -cd {} \; > rawdata/$NAME.$1.fq
+      find $SEQPATH -name $NAME$SAMPLEDELIM*$1* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$NAME.$1.fq || true
 
       # Do only if retrieved fastq file is non-empty
       if [ -s "rawdata/$NAME.$1.fq" ]

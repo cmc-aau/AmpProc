@@ -114,7 +114,7 @@ NSAMPLES=$(wc -w < samples_tmp.txt)
 while ((i++)); read SAMPLE
   do
     echo -ne "Processing sample: $SAMPLE ($i / $NSAMPLES)\r"
-    find "$SEQPATH" -name $SAMPLE$SAMPLESEP*R1* 2>/dev/null -exec gzip -cd {} \; > rawdata/$SAMPLE.R1.fq
+    find "$SEQPATH" -name $SAMPLE$SAMPLESEP*R1* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$SAMPLE.R1.fq || true
     
     #continue only if the sample was actually found and is not empty
     if [ -s "rawdata/$SAMPLE.R1.fq" ]
