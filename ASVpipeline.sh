@@ -23,8 +23,6 @@
 set -e
 set -o pipefail
 
-#usearch=$(which usearch11_32bit)
-usearch=usearch11
 #MAX_THREADS=${1:-$((`nproc`-2))}
 #MAX_THREADS=$((`nproc`-2))
 MAX_THREADS=$2
@@ -50,13 +48,13 @@ mkdir -p phix_filtered/tempdir
 echoWithDate() {
 #  echo "[$(date '+%Y-%m-%d %H:%M:%S')]: $1"
   CURRENTTIME=[$(date '+%Y-%m-%d %H:%M:%S')]
-  echo "$CURRENTTIME: $1"
-  echo "$CURRENTTIME: $1" >> ampproc-$STARTTIME.log
+  echo "${CURRENTTIME}: $1"
+  echo "${CURRENTTIME}: $1" >> "ampproc-${STARTTIME}.log"
 }
 
 echoPlus() {
   echo $1
-  echo $1 >> ampproc-$STARTTIME.log
+  echo $1 >> "ampproc-${STARTTIME}.log"
 }
 
 Cleanup_Function () {
@@ -77,7 +75,7 @@ Empty_samples_cleanup_Function () {
 # Use this function if Find_reads_phix_XX_Functions encounter a raw fastq
 # with zero reads
 
-   echoWithDate "ERROR: Sample $SAMPLE is empty. Please remove $SAMPLE from the samples file or check your spelling, and restart AmpProc."
+   echoWithDate "ERROR: Sample ${SAMPLE} is empty. Please remove ${SAMPLE} from the samples file or check your spelling, and restart AmpProc."
    echoPlus ""
    #echoPlus "Do you want to clean up the working folder? (yes/no)"
    #read CLEANFOLDER
@@ -113,51 +111,64 @@ rm samples_tmp0.txt
 NSAMPLES=$(wc -w < samples_tmp.txt)
 while ((i++)); read SAMPLE
   do
-    echo -ne "Processing sample: $SAMPLE ($i / $NSAMPLES)\r"
-    find "$SEQPATH" -name $SAMPLE$SAMPLESEP*R1* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$SAMPLE.R1.fq || true
-    
-    #continue only if the sample was actually found and is not empty
-    if [ -s "rawdata/$SAMPLE.R1.fq" ]
-      then
-        #filter PhiX
-        $usearch -filter_phix rawdata/$SAMPLE.R1.fq -output phix_filtered/$SAMPLE.R1.fq -threads $MAX_THREADS -quiet
-        rm rawdata/$SAMPLE.R1.fq
-        
-        if [ ! -s "phix_filtered/$SAMPLE.R1.fq" ]
-           then
-           echoWithDate "WARNING: Sample $SAMPLE is empty after removing PhiX contamination. $SAMPLE will not be included in further processing. Empty sample name is flagged in the file empty-samples.txt"
-           echo "$SAMPLE" >> empty-samples.txt
+    echo -ne "Processing sample ($i/$NSAMPLES): ${SAMPLE} "
+    #find the sample fastq file and decompress (if compressed)
+    #use head -n 1 to stop find from searching further after the first hit
+    #use "|| true" to avoid exiting when the find command doesn't 
+    #have permission to access some files/folders
+    sample_filepath=$(
+      find "$SEQPATH" \
+        -name "${SAMPLE}${SAMPLESEP}*R1*.f*q*" \
+        2> /dev/null |\
+      head -n 1 \
+      || true
+    )
 
-            #QC
-            else
-            #echo "TESTING: phix_filtered/SAMPLE QC running on $SAMPLE."
-            $usearch -fastq_filter phix_filtered/$SAMPLE.R1.fq -fastq_maxee 1.0 -fastaout phix_filtered/tempdir/$SAMPLE.R1.QCout.fa \
-              -fastq_trunclen 250 -relabel @ -threads $MAX_THREADS -quiet
-            cat phix_filtered/tempdir/$SAMPLE.R1.QCout.fa >> all.singlereads.nophix.qc.R1.fa
-            rm phix_filtered/tempdir/$SAMPLE.R1.QCout.fa
-            
-            # Create concatenated fastq file of nonfiltered reads, with the sample labels
-            $usearch -fastx_relabel phix_filtered/$SAMPLE.R1.fq -prefix $SAMPLE$SAMPLESEP -fastqout phix_filtered/tempdir/$SAMPLE.R1.relabeled.fq -quiet
-            cat phix_filtered/tempdir/$SAMPLE.R1.relabeled.fq >> all.singlereads.nophix.R1.fq
-            rm phix_filtered/$SAMPLE.R1.fq
-        fi
+    #continue only if the sample was actually found and is not empty
+    if [ -s "$sample_filepath" ]    
+    then
+      #decompress (if not compressed will just output file as-is)
+      echo "(found at $sample_filepath)"
+      gzip -cdfq "$sample_filepath" >\
+        "rawdata/${SAMPLE}.R1.fq"
+      #filter PhiX
+      usearch11 -filter_phix "rawdata/${SAMPLE}.R1.fq" -output "phix_filtered/${SAMPLE}.R1.fq" -threads "${MAX_THREADS}" -quiet
+      rm "rawdata/${SAMPLE}.R1.fq"
+
+      if [ ! -s "phix_filtered/${SAMPLE}.R1.fq" ]
+        then
+        echoWithDate "WARNING: Sample ${SAMPLE} is empty after removing PhiX contamination. ${SAMPLE} will not be included in further processing. Empty sample name is flagged in the file empty-samples.txt"
+        echo "${SAMPLE}" >> empty-samples.txt
+
+        #QC
+        else
+        #echo "TESTING: phix_filtered/SAMPLE QC running on ${SAMPLE}."
+        usearch11 -fastq_filter "phix_filtered/${SAMPLE}.R1.fq" -fastq_maxee 1.0 -fastaout "phix_filtered/tempdir/${SAMPLE}.R1.QCout.fa" \
+          -fastq_trunclen 250 -relabel @ -threads "${MAX_THREADS}" -quiet
+        cat "phix_filtered/tempdir/${SAMPLE}.R1.QCout.fa" >> all.singlereads.nophix.qc.R1.fa
+        rm "phix_filtered/tempdir/${SAMPLE}.R1.QCout.fa"
+
+        # Create concatenated fastq file of nonfiltered reads, with the sample labels
+        usearch11 -fastx_relabel "phix_filtered/${SAMPLE}.R1.fq" -prefix "${SAMPLE}${SAMPLESEP}" -fastqout "phix_filtered/tempdir/${SAMPLE}.R1.relabeled.fq" -quiet
+        cat "phix_filtered/tempdir/${SAMPLE}.R1.relabeled.fq" >> all.singlereads.nophix.R1.fq
+        rm "phix_filtered/${SAMPLE}.R1.fq"
+      fi
     else
-      # Run function to safely exit script if find zero reads raw fastq. This function is same as the copy on AmpProc main script file.
-      Empty_samples_cleanup_Function
+      echo "(sample not found or empty file!)"
     fi
 done < samples_tmp.txt
 
 echoWithDate "Dereplicating reads..."
-$usearch -fastx_uniques all.singlereads.nophix.qc.R1.fa -sizeout -fastaout uniques.R1.fa -relabel Uniq -quiet
+usearch11 -fastx_uniques all.singlereads.nophix.qc.R1.fa -sizeout -fastaout uniques.R1.fa -relabel Uniq -quiet
 
 echoWithDate "Generating ASVs (zOTUs) from dereplicated reads..."
-$usearch -unoise3 uniques.R1.fa -zotus zOTUs.R1.fa
+usearch11 -unoise3 uniques.R1.fa -zotus zOTUs.R1.fa
 
 echoWithDate "Filtering ASVs that are <60% similar to reference reads..."
 if [ -s "$prefilterDB" ]
   then
-    $usearch -usearch_global zOTUs.R1.fa -db $prefilterDB \
-      -strand both -id 0.6 -maxaccepts 1 -maxrejects 8 -matched prefilt_out.fa -threads $MAX_THREADS -quiet
+    usearch11 -usearch_global zOTUs.R1.fa -db $prefilterDB \
+      -strand both -id 0.6 -maxaccepts 1 -maxrejects 8 -matched prefilt_out.fa -threads ${MAX_THREADS} -quiet
     mv prefilt_out.fa zOTUs.R1.fa
   else
   	echo "Could not find prefilter reference database, continuing without prefiltering..."
@@ -166,9 +177,9 @@ fi
 echoWithDate "Searching ASVs against already known ASVs (exact match) and renaming accordingly..."
 if [ -s "$ASVDB" ]
   then
-    $usearch -search_exact zOTUs.R1.fa -db $ASVDB -maxaccepts 1 -maxrejects 0 -strand both \
-      -dbmatched ASVs.R1.fa -notmatched ASVs_nohits.R1.fa -threads $MAX_THREADS -quiet
-    $usearch -fastx_relabel ASVs_nohits.R1.fa -prefix newASV -fastaout ASVs_nohits_renamed.R1.fa -quiet
+    usearch11 -search_exact zOTUs.R1.fa -db $ASVDB -maxaccepts 1 -maxrejects 0 -strand both \
+      -dbmatched ASVs.R1.fa -notmatched ASVs_nohits.R1.fa -threads ${MAX_THREADS} -quiet
+    usearch11 -fastx_relabel ASVs_nohits.R1.fa -prefix newASV -fastaout ASVs_nohits_renamed.R1.fa -quiet
     #combine hits with nohits
     cat ASVs_nohits_renamed.R1.fa >> ASVs.R1.fa
   else
@@ -179,7 +190,7 @@ fi
 echoWithDate "Predicting taxonomy of the ASVs..."
 if [ -s "$TAXDB" ]
   then
-    $usearch -sintax ASVs.R1.fa -db "$TAXDB" -tabbedout ASVs.R1.sintax -strand both -sintax_cutoff 0.8 -threads $MAX_THREADS -quiet
+    usearch11 -sintax ASVs.R1.fa -db "$TAXDB" -tabbedout ASVs.R1.sintax -strand both -sintax_cutoff 0.8 -threads ${MAX_THREADS} -quiet
     sort -V ASVs.R1.sintax -o ASVs.R1.sintax
   else
     echo "Could not find taxonomy database, continuing without assigning taxonomy..."    
@@ -190,7 +201,7 @@ echoWithDate "Generating ASV table..."
 # It is much faster to split into smaller chunks and run in parallel using
 # GNU parallel and then merge tables afterwards.
 #JOBS=$((( "${MAX_THREADS}" / "${CHUNKSIZE}" - 1)))
-JOBS=$((( ${MAX_THREADS} / ${CHUNKSIZE} - 1)))
+JOBS=$((( MAX_THREADS / CHUNKSIZE - 1)))
 #echo $JOBS
 if [ $JOBS -gt 1 ]
   then
@@ -202,10 +213,10 @@ if [ $JOBS -gt 1 ]
   mkdir -p $SPLITFOLDER
 
   # split all unfiltered reads
-  $usearch -fastx_split all.singlereads.nophix.R1.fq -splits $JOBS -outname "${SPLITFOLDER}/all.singlereads.nophix.R1_@" -quiet
+  usearch11 -fastx_split all.singlereads.nophix.R1.fq -splits $JOBS -outname "${SPLITFOLDER}/all.singlereads.nophix.R1_@" -quiet
 
   # Run a usearch11 -otutab command for each file
-  find "$SPLITFOLDER" -type f -name '*all.singlereads.nophix.R1_*' | parallel $usearch -otutab {} -zotus ASVs.R1.fa -otutabout {}_asvtab.tsv -threads $CHUNKSIZE -sample_delim "_" -quiet
+  find "$SPLITFOLDER" -type f -name '*all.singlereads.nophix.R1_*' | parallel usearch11 -otutab {} -zotus ASVs.R1.fa -otutabout {}_asvtab.tsv -threads $CHUNKSIZE -sample_delim "_" -quiet
 
   # Generate a comma-separated list of filenames to merge
   ASVTABSLIST=""
@@ -225,14 +236,14 @@ if [ $JOBS -gt 1 ]
   done < <(find "$SPLITFOLDER" -type f -iname '*_asvtab.tsv' -print0)
 
   # Merge the asvtables
-  $usearch -otutab_merge "$ASVTABSLIST" -output "ASVtable.tsv" -quiet
+  usearch11 -otutab_merge "$ASVTABSLIST" -output "ASVtable.tsv" -quiet
 
   else
   # Don't run in parallel if max_threads <= 2*chunksize
-  $usearch -otutab all.singlereads.nophix.R1.fq -zotus ASVs.R1.fa -otutabout ASVtable.tsv -threads "$MAX_THREADS" -sample_delim $SAMPLESEP
+  usearch11 -otutab all.singlereads.nophix.R1.fq -zotus ASVs.R1.fa -otutabout ASVtable.tsv -threads "$MAX_THREADS" -sample_delim $SAMPLESEP
 fi
 
-#$usearch -otutab all.singlereads.nophix.R1.fq -zotus ASVs.R1.fa -otutabout ASVtable.tsv -threads $MAX_THREADS -sample_delim $SAMPLESEP
+#usearch11 -otutab all.singlereads.nophix.R1.fq -zotus ASVs.R1.fa -otutabout ASVtable.tsv -threads $MAX_THREADS -sample_delim $SAMPLESEP
 #sort ASVtable
 head -n 1 ASVtable.tsv > tmp
 tail -n +2 ASVtable.tsv | sort -V >> tmp
@@ -241,7 +252,7 @@ mv tmp ASVtable.tsv
 # Run temporary files/folders removal function
 Cleanup_Function
 
-duration=$(printf '%02dh:%02dm:%02ds\n' $(($SECONDS/3600)) $(($SECONDS%3600/60)) $(($SECONDS%60)))
+duration=$(printf '%02dh:%02dm:%02ds\n' $((SECONDS/3600)) $((SECONDS%3600/60)) $((SECONDS%60)))
 echoWithDate "Done in: $duration"
 
 

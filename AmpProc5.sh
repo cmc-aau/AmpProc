@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSIONNUMBER=5.1.2
+VERSIONNUMBER=5.1.3
 MODIFIEDDATE="2 Aug 2022"
 
 ###################################################################################################
@@ -517,11 +517,35 @@ echoWithDate "Retrieving sequenced files and removing PhiX contamination."
       # Retrieve sequenced reads
       SAMPLEDELIM="_";
       NAME=$SAMPLES;
-      find $SEQPATH -name $NAME$SAMPLEDELIM*R1* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$NAME.R1.fq || true
-      find $SEQPATH -name $NAME$SAMPLEDELIM*R2* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$NAME.R2.fq || true
-      # Do only if fasta file is non-empty
-      if [ -s "rawdata/$NAME.R1.fq" ]
-        then
+      #find the sample fastq file and decompress (if compressed)
+      #use head -n 1 to stop find from searching further after the first hit
+      #use "|| true" to avoid exiting when the find command doesn't 
+      #have permission to access some files/folders
+      sample_filepath_R1=$(
+        find "$SEQPATH" \
+          -name "$NAME$SAMPLEDELIM*R1*" \
+          2> /dev/null |\
+        head -n 1 \
+        || true
+      )
+      #search for the R2 file in the same folder where the R1 file was found
+      sample_filepath_R2=$(
+        find "$(dirname "${sample_filepath_R1}")" \
+          -name "$NAME$SAMPLEDELIM*R2*" \
+          2> /dev/null |\
+        head -n 1 \
+        || true
+      )
+
+      #continue only if the sample was actually found and is not empty
+      #assume R2 is also present if R1 is, no reason to double search times
+      if [ -s "$sample_filepath_R1" ]    
+      then
+        #decompress (if not compressed will just output file as-is)
+        gzip -cdfq "${sample_filepath_R1}" >\
+          "rawdata/$NAME.R1.fq"
+        gzip -cdfq "${sample_filepath_R2}" >\
+          "rawdata/$NAME.R2.fq"
         # Filter phix
         usearch11 -filter_phix rawdata/$NAME.R1.fq -reverse rawdata/$NAME.R2.fq -output phix_filtered/$NAME.R1.fq -output2 phix_filtered/$NAME.R2.fq -threads $NUMTHREADS -quiet
         # Check that phix filtered fastq file is still non-empty.
@@ -560,30 +584,43 @@ echoWithDate "Retrieving sequenced files and removing PhiX contamination."
 
   while read SAMPLES
   do
-      # Retrieve sequenced reads
-      SAMPLEDELIM="_";
-      NAME=$SAMPLES;
+    # Retrieve sequenced reads
+    SAMPLEDELIM="_";
+    NAME=$SAMPLES;
 
-      find $SEQPATH -name $NAME$SAMPLEDELIM*$1* -exec gzip -cdfq {} \; 2>/dev/null > rawdata/$NAME.$1.fq || true
+    #find the sample fastq file and decompress (if compressed)
+    #use head -n 1 to stop find from searching further after the first hit
+    #use "|| true" to avoid exiting when the find command doesn't 
+    #have permission to access some files/folders
+    sample_filepath=$(
+      find $SEQPATH \
+        -name "${NAME}${SAMPLEDELIM}*$1*" \
+        2> /dev/null |\
+      head -n 1 \
+      || true
+    )
 
-      # Do only if retrieved fastq file is non-empty
-      if [ -s "rawdata/$NAME.$1.fq" ]
+    #continue only if the sample was actually found and is not empty
+    if [ -s "$sample_filepath" ]    
+    then
+      #decompress (if not compressed will just output file as-is)
+      gzip -cdfq "$sample_filepath" >\
+        "rawdata/$NAME.$1.fq"
+
+      # Filter phix
+      usearch11 -filter_phix "rawdata/$NAME.$1.fq" -output "phix_filtered/$NAME.$1.fq" -threads $NUMTHREADS -quiet
+      # Check that phix filtered fastq file is still non-empty.
+      # Flag sample for removal if empty.
+      if [ ! -s "phix_filtered/$NAME.$1.fq" ]
         then
-        # Filter phix
-        usearch11 -filter_phix rawdata/$NAME.$1.fq -output phix_filtered/$NAME.$1.fq -threads $NUMTHREADS -quiet
-        # Check that phix filtered fastq file is still non-empty.
-        # Flag sample for removal if empty.
-        if [ ! -s "phix_filtered/$NAME.$1.fq" ]
-          then
-          echoWithDate "WARNING: Sample $NAME is empty after removing PhiX contamination. $NAME will not be included in further processing."
-          echo "$NAME" >> empty-samples.txt
-          sed -i "/^$NAME$/d" samples_tmp.txt
-        fi
-        else
-        # Run function to safely exit script if find zero reads raw fastq
-        Empty_samples_cleanup_Function
-       fi
-
+        echoWithDate "WARNING: Sample $NAME is empty after removing PhiX contamination. $NAME will not be included in further processing."
+        echo "$NAME" >> empty-samples.txt
+        sed -i "/^$NAME$/d" samples_tmp.txt
+      fi
+      else
+      # Run function to safely exit script if find zero reads raw fastq
+      Empty_samples_cleanup_Function
+      fi
   done < samples_tmp.txt
 
 #rm -rf rawdata/
